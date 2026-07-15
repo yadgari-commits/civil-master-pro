@@ -1,0 +1,60 @@
+{
+  "name": "Civil Master Pro",
+  "short_name": "سیویل مستر",
+  "description": "اپلیکیشن تخصصی محاسبات مهندسی عمران - پروکتور، FDT، CBR، کانکریت، خشت و تبدیل واحدات. آفلاین، دو زبانه. / Offline bilingual civil engineering calculator (Proctor, FDT, CBR, Concrete, Brick, Unit Converter).",
+  "lang": "fa",
+  "dir": "rtl",
+  "id": "/?source=pwa",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#fbbf24",
+  "categories": ["productivity", "education", "utilities"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "تست پروکتور",
+      "short_name": "Proctor",
+      "description": "محاسبه تست تراکم پروکتور",
+      "url": "./?view=proctor",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "FDT",
+      "short_name": "FDT",
+      "description": "تست چگالی صحرایی",
+      "url": "./?view=fdt",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "ماشین حساب",
+      "short_name": "Calc",
+      "description": "ماشین حساب مهندسی",
+      "url": "./?view=calculator",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

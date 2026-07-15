@@ -1,0 +1,7 @@
+﻿@echo off
+echo Civil Master Pro v4.0 - upload these files to GitHub:
+echo - www\
+echo - .github\
+echo - twa-manifest.json
+echo - README.md
+echo - .gitignore

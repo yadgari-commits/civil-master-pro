@@ -1,0 +1,34 @@
+{
+  "packageId": "com.yadgari.civilmasterpro",
+  "name": "Civil Master Pro",
+  "launcherName": "سیویل مستر",
+  "display": "standalone",
+  "themeColor": "#fbbf24",
+  "navigationColor": "#000000",
+  "backgroundColor": "#0f172a",
+  "enableNotifications": false,
+  "startUrl": "/civil-master-pro/?source=pwa",
+  "iconUrl": "/civil-master-pro/icons/icon-512.png",
+  "splashColor": "#0f172a",
+  "webManifestUrl": "/civil-master-pro/manifest.json",
+  "fallbackType": "customtabs",
+  "appVersion": "4.0.0",
+  "appVersionCode": 40,
+  "signing": {
+    "generate": true
+  },
+  "host": "YOUR_GITHUB_USERNAME.github.io",
+  "additionalTrustedOrigins": [],
+  "appShortcuts": [
+    {
+      "name": "تست پروکتور",
+      "shortName": "Proctor",
+      "url": "/civil-master-pro/?view=proctor"
+    },
+    {
+      "name": "FDT",
+      "shortName": "FDT",
+      "url": "/civil-master-pro/?view=fdt"
+    }
+  ]
+}
