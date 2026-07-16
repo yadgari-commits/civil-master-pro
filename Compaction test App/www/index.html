@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="manifest" href="manifest.json">
+    <title>Civil Master Pro</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.10/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;400;700;900&display=swap');
+        
+        :root {
+            --primary: #fbbf24;
+            --bg-dark: #0f172a;
+            --panel: #1e293b;
+        }
+
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: var(--bg-dark);
+            color: #e2e8f0;
+            margin: 0;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            touch-action: manipulation;
+        }
+
+        .neo-panel {
+            background: var(--panel);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .gold-glow {
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.2);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+            color: #000;
+            font-weight: 900;
+            transition: all 0.2s;
+        }
+
+        .input-field {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .loading-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #0f172a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .loader {
+            border: 3px solid #1e293b;
+            border-top: 3px solid #fbbf24;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .formula-box {
+            background: rgba(251, 191, 36, 0.05);
+            border-right: 3px solid var(--primary);
+            font-family: monospace;
+            font-size: 0.8rem;
+        }
+
+        ::-webkit-scrollbar { display: none; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .level-bg {
+            width: 250px; height: 250px; border-radius: 50%;
+            background: #1e293b; border: 8px solid #334155;
+            position: relative; margin: 0 auto;
+        }
+        .level-bubble {
+            width: 40px; height: 40px; background: radial-gradient(circle at 30% 30%, #fbbf24, #d97706);
+            border-radius: 50%; position: absolute; transition: all 0.05s linear;
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
+        }
+        .level-center {
+            position: absolute; top: 50%; left: 50%; width: 50px; height: 50px;
+            border: 2px solid rgba(251, 191, 36, 0.3); border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .ruler-container {
+            height: 100%; width: 60px; background: #1e293b;
+            border-left: 2px solid var(--primary); position: relative;
+        }
+        .ruler-tick { position: absolute; left: 0; background: var(--primary); }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-screen">
+        <div class="loader mb-4"></div>
+        <p class="text-sm font-black text-amber-500 italic tracking-widest uppercase">Initializing Suite</p>
+    </div>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // Initialize Encyclopedia Database
+        const db = new Dexie("CivilEncyclopediaDB");
+        db.version(1).stores({
+            terms: '++id, enTitle, faTitle, category, acronym, *tags',
+            favorites: 'id',
+            history: '++id, termId, timestamp'
+        });
+
+        const App = () => {
+            const [view, setView] = useState('home');
+            const [ready, setReady] = useState(false);
+
+            useEffect(() => {
+                if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+                
+                // Seed Initial Data (Demonstration)
+                const seedData = async () => {
+                    const count = await db.terms.count();
+                    if (count === 0) {
+                        const starterTerms = [
+                            { 
+                                enTitle: "Proctor Test", 
+                                faTitle: "ØªØ³Øª Ù¾Ø±ÙˆÚ©ØªÙˆØ±", 
+                                enDef: "A laboratory method of experimentally determining the optimal moisture content at which a given soil type will become most dense.", 
+                                faDef: "ÛŒÚ© Ø±ÙˆØ´ Ø¢Ø²Ù…Ø§ÛŒØ´Ú¯Ø§Ù‡ÛŒ Ø¨Ø±Ø§ÛŒ ØªØ¹ÛŒÛŒÙ† Ø±Ø·ÙˆØ¨Øª Ø¨Ù‡ÛŒÙ†Ù‡ Ú©Ù‡ Ø¯Ø± Ø¢Ù† Ù†ÙˆØ¹ Ø®Ø§ØµÛŒ Ø§Ø² Ø®Ø§Ú© Ø¨Ù‡ Ø¨ÛŒØ´ØªØ±ÛŒÙ† Ú©Ø«Ø§ÙØª Ø®ÙˆØ¯ Ù…ÛŒâ€ŒØ±Ø³Ø¯.", 
+                                category: "Soil Mechanics", 
+                                acronym: "MDD",
+                                standards: "ASTM D698, AASHTO T99",
+                                related: "CBR, OMC, FDT",
+                                applications: "Embankments, Road bases, Dams",
+                                formula: "Ï_dry = Ï_wet / (1 + w/100)"
+                            },
+                            { 
+                                enTitle: "California Bearing Ratio", 
+                                faTitle: "Ù†Ø³Ø¨Øª Ø¨Ø§Ø±Ø¨Ø±ÛŒ Ú©Ø§Ù„ÛŒÙØ±Ù†ÛŒØ§", 
+                                enDef: "A penetration test for evaluation of the mechanical strength of natural ground, subgrades and base courses.", 
+                                faDef: "ØªØ³Øª Ù†ÙÙˆØ° Ø¨Ø±Ø§ÛŒ Ø§Ø±Ø²ÛŒØ§Ø¨ÛŒ Ù…Ù‚Ø§ÙˆÙ…Øª Ù…Ú©Ø§Ù†ÛŒÚ©ÛŒ Ø²Ù…ÛŒÙ† Ø·Ø¨ÛŒØ¹ÛŒØŒ Ø³Ø§Ø¨â€ŒÚ¯Ø±ÛŒØ¯ Ùˆ Ù„Ø§ÛŒÙ‡â€ŒÙ‡Ø§ÛŒ Ø§Ø³Ø§Ø³.", 
+                                category: "Pavement Engineering", 
+                                acronym: "CBR",
+                                standards: "ASTM D1883, AASHTO T193",
+                                related: "DCP, Proctor Test",
+                                applications: "Pavement Design, Subgrade strength"
+                            },
+                            { 
+                                enTitle: "Slump Test", 
+                                faTitle: "ØªØ³Øª Ø§Ø³Ù„Ø§Ù…Ù¾", 
+                                enDef: "A laboratory or field test used to measure the consistency of fresh concrete.", 
+                                faDef: "Ø¢Ø²Ù…Ø§ÛŒØ´ Ø¢Ø²Ù…Ø§ÛŒØ´Ú¯Ø§Ù‡ÛŒ ÛŒØ§ Ø³Ø§Ø­ÙˆÛŒ Ø¨Ø±Ø§ÛŒ Ø§Ù†Ø¯Ø§Ø²Ù‡â€ŒÚ¯ÛŒØ±ÛŒ Ú©Ø§Ø±Ø§ÛŒÛŒ Ùˆ Ø±ÙˆØ§Ù†ÛŒ Ú©Ø§Ù†Ú©Ø±ÛŒØª ØªØ§Ø²Ù‡.", 
+                                category: "Concrete Technology", 
+                                acronym: "SLUMP",
+                                standards: "ASTM C143, BS 1881",
+                                related: "Workability, W/C Ratio",
+                                applications: "Concrete Quality Control"
+                            },
+                            { 
+                                enTitle: "Maximum Dry Density", 
+                                faTitle: "Ú©Ø«Ø§ÙØª Ø®Ø´Ú© Ø§Ø¹Ø¸Ù…ÛŒ", 
+                                enDef: "The maximum density obtained in a proctor test at optimum moisture content.", 
+                                faDef: "Ø¨ÛŒØ´ØªØ±ÛŒÙ† Ú©Ø«Ø§ÙØªÛŒ Ú©Ù‡ Ø¯Ø± ØªØ³Øª Ù¾Ø±ÙˆÚ©ØªÙˆØ± Ø¯Ø± Ø±Ø·ÙˆØ¨Øª Ø¨Ù‡ÛŒÙ†Ù‡ Ø¨Ù‡ Ø¯Ø³Øª Ù…ÛŒâ€ŒØ¢ÛŒØ¯.", 
+                                category: "Soil Mechanics", 
+                                acronym: "MDD",
+                                standards: "ASTM D1557",
+                                related: "OMC, Compaction",
+                                formula: "Î³d = Ws / V"
+                            }
+                        ];
+                        await db.terms.bulkAdd(starterTerms);
+                    }
+                };
+                
+                seedData().then(() => {
+                    setTimeout(() => { 
+                        document.getElementById('loading').style.display = 'none'; 
+                        setReady(true); 
+                    }, 800);
+                });
+            }, []);
+
+            if (!ready) return null;
+
+            const renderView = () => {
+                switch(view) {
+                    case 'home': return <Home setView={setView} />;
+                    case 'fdt': return <FDTCalculator onBack={() => setView('home')} />;
+                    case 'proctor': return <ProctorCalculator onBack={() => setView('home')} />;
+                    case 'brick': return <BrickCalculator onBack={() => setView('home')} />;
+                    case 'concrete': return <ConcreteCalculator onBack={() => setView('home')} />;
+                    case 'steel': return <SteelCalculator onBack={() => setView('home')} />;
+                    case 'slope': return <SlopeCalculator onBack={() => setView('home')} />;
+                    case 'geometry': return <GeometryCalculator onBack={() => setView('home')} />;
+                    case 'calculator': return <Calculator onBack={() => setView('home')} />;
+                    case 'converter': return <UnitConverter onBack={() => setView('home')} />;
+                    case 'date': return <DateConverter onBack={() => setView('home')} />;
+                    case 'ruler': return <Ruler onBack={() => setView('home')} />;
+                    case 'level': return <BubbleLevel onBack={() => setView('home')} />;
+                    case 'glossary': return <Encyclopedia onBack={() => setView('home')} />;
+                    case 'about': return <AboutView onBack={() => setView('home')} />;
+                    default: return <Home setView={setView} />;
+                }
+            };
+
+            return (
+                <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-950 relative overflow-hidden fade-in shadow-2xl">
+                    <header className="pt-10 pb-6 px-6 bg-slate-900/90 backdrop-blur-lg border-b border-white/5 flex justify-between items-center z-50">
+                        <div onClick={() => setView('home')} className="cursor-pointer text-right">
+                            <h1 className="text-xl font-black text-white italic tracking-tighter uppercase">CIVIL<span className="text-amber-400">MASTER</span> PRO</h1>
+                            <p className="text-[9px] font-bold text-amber-500/80 tracking-widest uppercase italic">Yadgari Engineering Tool</p>
+                        </div>
+                        <button onClick={() => setView('about')} className="w-10 h-10 rounded-2xl bg-amber-400 flex items-center justify-center shadow-lg gold-glow active:scale-95 transition-all">
+                            <i className="fas fa-info-circle text-slate-900 text-lg"></i>
+                        </button>
+                    </header>
+                    <main className="flex-1 overflow-y-auto px-5 py-6 pb-32 no-scrollbar">
+                        {renderView()}
+                    </main>
+                    <nav className="absolute bottom-0 left-0 right-0 h-20 bg-slate-900/95 backdrop-blur-xl border-t border-white/5 flex justify-around items-center px-4 pb-4 z-50">
+                        <NavBtn active={view === 'home'} icon="fa-th-large" l1="Ù…Ù†ÙˆÛŒ Ø§ØµÙ„ÛŒ" l2="Main Menu" onClick={() => setView('home')} />
+                        <NavBtn active={['calculator', 'converter', 'date', 'ruler', 'level'].includes(view)} icon="fa-tools" l1="Ø§Ø¨Ø²Ø§Ø±Ù‡Ø§" l2="Tools" onClick={() => setView('calculator')} />
+                        <NavBtn active={['fdt', 'proctor', 'brick', 'concrete', 'steel', 'slope', 'geometry'].includes(view)} icon="fa-calculator" l1="Ù…Ø­Ø§Ø³Ø¨Ø§Øª" l2="Calculations" onClick={() => setView('fdt')} />
+                    </nav>
+                </div>
+            );
+        };
+
+        const NavBtn = ({ active, icon, l1, l2, onClick }) => (
+            <button onClick={onClick} className={`flex flex-col items-center gap-0.5 transition-all ${active ? 'text-amber-400 scale-105' : 'text-slate-500 opacity-60'}`}>
+                <i className={`fas ${icon} text-lg`}></i>
+                <span className="text-[9px] font-black tracking-tighter">{l1}</span>
+                <span className="text-[7px] font-bold uppercase opacity-60 tracking-tighter">{l2}</span>
+            </button>
+        );
+
+        const Home = ({ setView }) => {
+            const sections = [
+                { t1: "Ù…Ø­Ø§Ø³Ø¨Ø§Øª Ø§Ù†Ø¬Ù†ÛŒØ±ÛŒ", t2: "Engineering Calculations", tools: [
+                    { id: 'fdt', n1: 'Ú©Ù…Ù¾Ú©Ø´Ù† ØªØ³Øª', n2: 'Compaction Test', i: 'fa-vial', c: 'border-blue-500/20' },
+                    { id: 'proctor', n1: 'ØªØ³Øª Ù¾Ø±ÙˆÚ©ØªÙˆØ± (MDD)', n2: 'Proctor (MDD)', i: 'fa-weight-hanging', c: 'border-red-500/20' },
+                    { id: 'brick', n1: 'Ø¨Ø±Ø¢ÙˆØ±Ø¯ Ø®Ø´Øª', n2: 'Brick Estimator', i: 'fa-layer-group', c: 'border-orange-500/20' },
+                    { id: 'concrete', n1: 'Ø¨Ø±Ø¢ÙˆØ±Ø¯ Ú©Ø§Ù†Ú©Ø±ÛŒØª', n2: 'Concrete Estimator', i: 'fa-fill-drip', c: 'border-emerald-500/20' },
+                    { id: 'steel', n1: 'Ø¨Ø±Ø¢ÙˆØ±Ø¯ Ø³ÛŒØ®â€ŒÚ¯ÙˆÙ„', n2: 'Rebar Estimator', i: 'fa-bars-staggered', c: 'border-slate-500/20' },
+                    { id: 'slope', n1: 'Ù…Ø­Ø§Ø³Ø¨Ù‡ Ù…ÛŒÙ„', n2: 'Slope Calc', i: 'fa-chart-line', c: 'border-amber-500/20' },
+                    { id: 'geometry', n1: 'Ø§Ø´Ú©Ø§Ù„ Ù‡Ù†Ø¯Ø³ÛŒ', n2: 'Geometry', i: 'fa-shapes', c: 'border-purple-500/20' },
+                ]},
+                { t1: "Ø§Ø¨Ø²Ø§Ø±Ù‡Ø§ÛŒ Ú©Ù…Ú©ÛŒ", t2: "Utility Tools", tools: [
+                    { id: 'calculator', n1: 'Ù…Ø§Ø´ÛŒÙ† Ø­Ø³Ø§Ø¨', n2: 'Calculator', i: 'fa-calculator', c: 'border-pink-500/20' },
+                    { id: 'converter', n1: 'ØªØ¨Ø¯ÛŒÙ„ ÙˆØ§Ø­Ø¯Ø§Øª', n2: 'Unit Converter', i: 'fa-exchange-alt', c: 'border-cyan-500/20' },
+                    { id: 'date', n1: 'ØªØ¨Ø¯ÛŒÙ„ ØªØ§Ø±ÛŒØ®', n2: 'Date Converter', i: 'fa-calendar-alt', c: 'border-indigo-500/20' },
+                    { id: 'ruler', n1: 'Ø®Ø·Ú©Ø´ Ø¯ÛŒØ¬ÛŒØªØ§Ù„', n2: 'Digital Ruler', i: 'fa-ruler-horizontal', c: 'border-yellow-500/20' },
+                    { id: 'level', n1: 'Ø¢Ø¨ ØªØ±Ø§Ø² (Level)', n2: 'Bubble Level', i: 'fa-dot-circle', c: 'border-green-500/20' },
+                    { id: 'glossary', n1: 'Ø¯Ø§ÛŒØ±Ù‡â€ŒØ§Ù„Ù…Ø¹Ø§Ø±Ù', n2: 'Encyclopedia', i: 'fa-book-atlas', c: 'border-amber-500/30' },
+                ]}
+            ];
+
+            return (
+                <div className="space-y-8 fade-in">
+                    {sections.map((sec, idx) => (
+                        <div key={idx} className="space-y-3">
+                            <div className="flex justify-between items-end px-2 border-r-2 border-amber-400/30 pr-3">
+                                <h2 className="text-[11px] font-black text-white uppercase">{sec.t1}</h2>
+                                <span className="text-[8px] font-bold text-slate-500 uppercase">{sec.t2}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {sec.tools.map(m => (
+                                    <button key={m.id} onClick={() => setView(m.id)} className={`neo-panel p-4 rounded-3xl text-right flex flex-col items-start gap-3 active:scale-95 transition-all border-b-2 ${m.c}`}>
+                                        <div className="p-2.5 bg-slate-800/80 rounded-2xl text-amber-400">
+                                            <i className={`fas ${m.i} text-lg w-5 text-center`}></i>
+                                        </div>
+                                        <div className="space-y-0.5 text-right w-full">
+                                            <h3 className="text-[12px] font-black text-white leading-none">{m.n1}</h3>
+                                            <p className="text-[8px] font-bold text-slate-500 uppercase leading-none">{m.n2}</p>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const ViewHeader = ({ t1, t2, icon, onBack }) => (
+            <div className="flex items-center gap-4 mb-6">
+                <button onClick={onBack} className="w-10 h-10 bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400 active:scale-90 transition-all">
+                    <i className="fas fa-arrow-right"></i>
+                </button>
+                <div className="space-y-0 text-right">
+                    <div className="flex items-center gap-2">
+                        <i className={`fas ${icon} text-amber-400 text-sm`}></i>
+                        <h2 className="text-lg font-black text-white">{t1}</h2>
+                    </div>
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t2}</p>
+                </div>
+            </div>
+        );
+
+        const Input = ({ l1, l2, onChange, value, type = "number", placeholder = "0.00" }) => (
+            <div className="space-y-1">
+                <div className="flex justify-between px-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase">{l1}</label>
+                    <label className="text-[8px] font-bold text-slate-600 uppercase italic">{l2}</label>
+                </div>
+                <input 
+                    type={type} value={value} onChange={e => onChange(e.target.value)}
+                    className="w-full input-field p-4 rounded-2xl text-white font-bold focus:border-amber-400 outline-none transition-all"
+                    placeholder={placeholder}
+                />
+            </div>
+        );
+
+        const ResultItem = ({ l1, l2, value, unit, color="text-amber-400" }) => (
+            <div className="flex justify-between items-center py-2.5 border-b border-white/5 last:border-0">
+                <div className="flex flex-col items-start">
+                    <span className="text-[10px] font-bold text-slate-400 leading-none">{l1}</span>
+                    <span className="text-[7px] font-bold text-slate-600 uppercase leading-none mt-1">{l2}</span>
+                </div>
+                <span className={`text-base font-black ${color}`}>{value} <small className="text-[9px] text-white/40 font-normal">{unit}</small></span>
+            </div>
+        );
+
+        const Formula = ({ t1, t2, text }) => (
+            <div className="formula-box p-3 rounded-xl mb-4 text-amber-500/80 italic text-right">
+                <div className="flex justify-between mb-1">
+                    <div className="text-[8px] font-bold text-amber-500/40 uppercase tracking-widest">{t1}</div>
+                    <div className="text-[8px] font-bold text-amber-500/40 uppercase tracking-widest">{t2}</div>
+                </div>
+                {text}
+            </div>
+        );
+
+        const CopyBtn = ({ data }) => {
+            const [copied, setCopied] = useState(false);
+            const copy = () => {
+                let text = `--- CIVIL MASTER RESULTS ---\n`;
+                Object.entries(data).forEach(([k, v]) => text += `${k}: ${v}\n`);
+                text += `\nShared by Yadgari Civil App`;
+                navigator.clipboard.writeText(text);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+            return (
+                <button onClick={copy} className="w-full mt-4 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500 uppercase py-2 border border-dashed border-white/10 rounded-xl active:scale-95 transition-all">
+                    <i className={`fas ${copied ? 'fa-check text-emerald-400' : 'fa-copy'}`}></i>
+                    {copied ? 'Ú©Ø§Ù¾ÛŒ Ø´Ø¯ / Copied' : 'Ú©Ø§Ù¾ÛŒ Ø¨Ø±Ø§ÛŒ Ø§Ø±Ø³Ø§Ù„ / Copy Results'}
+                </button>
+            );
+        };
+
+        const FDTCalculator = ({ onBack }) => {
+            const [v, setV] = useState({ ww: '', w1: '', w2: '', mc: '', mdd: '', wc: '1502', ds: '1.405' });
+            const [res, setRes] = useState(null);
+            const [showFormula, setShowFormula] = useState(false);
+            
+            const calc = () => {
+                const s_ww = parseFloat(v.ww) || 0;
+                const s_w1 = parseFloat(v.w1) || 0;
+                const s_w2 = parseFloat(v.w2) || 0;
+                const s_mc = parseFloat(v.mc) || 0;
+                const s_mdd = parseFloat(v.mdd) || 0;
+                const s_wc = parseFloat(v.wc) || 0;
+                const s_ds = parseFloat(v.ds) || 0;
+
+                if (!s_ww || !s_w1 || !s_w2 || !s_mdd || !s_ds) return;
+
+                const sandUsed = s_w1 - s_w2;
+                const sandInHole = sandUsed - s_wc;
+                const holeVol = sandInHole / s_ds;
+                const wetDensity = s_ww / holeVol;
+                const dryDensity = wetDensity / (1 + (s_mc / 100));
+                const compaction = (dryDensity / s_mdd) * 100;
+                
+                setRes({
+                    sandUsed: sandUsed.toFixed(1),
+                    sandInHole: sandInHole.toFixed(1),
+                    holeVol: holeVol.toFixed(1),
+                    wetDensity: wetDensity.toFixed(3),
+                    dryDensity: dryDensity.toFixed(3),
+                    compaction: compaction.toFixed(1)
+                });
+            };
+
+            const loadSample = () => {
+                // To get 95.8% with the user's data (Net soil was ~6640)
+                setV({ ww: '6640', w1: '8881', w2: '3272', mc: '7.5', mdd: '2.206', wc: '1502', ds: '1.405' });
+            };
+
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="Ú©Ù…Ù¾Ú©Ø´Ù† ØªØ³Øª" t2="Compaction (FDT)" icon="fa-vial" onBack={onBack} />
+                    
+                    <div className="flex gap-2 mb-4">
+                        <button onClick={loadSample} className="flex-1 py-2 bg-slate-800 rounded-xl text-[9px] font-bold text-amber-500 border border-amber-500/20 uppercase tracking-tighter">Ø¯Ø±Ø¬ Ø¯ÛŒØªØ§ÛŒ Ù†Ù…ÙˆÙ†Ù‡ / Load Sample</button>
+                        <button onClick={() => setShowFormula(!showFormula)} className="w-12 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 border border-white/5">
+                            <i className="fas fa-microchip text-xs"></i>
+                        </button>
+                    </div>
+
+                    {showFormula && (
+                        <div className="neo-panel p-4 rounded-2xl mb-4 space-y-2 text-[10px] text-slate-400 font-mono">
+                            <p className="text-amber-500 font-bold mb-1 underline">Logic / Ù…Ù†Ø·Ù‚ Ù…Ø­Ø§Ø³Ø¨Ø§Øª:</p>
+                            <p>1. Sand Used = Init. Cone - Resid. Cone</p>
+                            <p>2. Sand In Hole = Sand Used - Cone Weight</p>
+                            <p>3. Hole Volume = Sand In Hole / Sand Density</p>
+                            <p>4. Wet Density = Sample Weight / Hole Volume</p>
+                            <p>5. Dry Density = Wet Density / (1 + MC/100)</p>
+                            <p>6. % Compaction = (Dry Density / Lab MDD) Ã— 100</p>
+                        </div>
+                    )}
+
+                    <div className="space-y-4">
+                        <div className="neo-panel p-4 rounded-2xl space-y-3">
+                            <Input l1="Û±- ÙˆØ²Ù† Ù†Ù…ÙˆÙ†Ù‡ (Ø®Ø§Ú© Ù…Ø±Ø·ÙˆØ¨)" l2="1- Weight of Sample (g)" value={v.ww} onChange={val => setV({...v, ww: val})} />
+                            <div className="grid grid-cols-2 gap-2">
+                                <Input l1="Û²- ÙˆØ²Ù† Ø§ÙˆÙ„ÛŒ Ù…Ø®Ø±ÙˆØ·" l2="2- Wt of Cone Before (g)" value={v.w1} onChange={val => setV({...v, w1: val})} />
+                                <Input l1="Û³- ÙˆØ²Ù† Ø¯ÙˆÙ…ÛŒ Ù…Ø®Ø±ÙˆØ·" l2="3- Wt of Cone After (g)" value={v.w2} onChange={val => setV({...v, w2: val})} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <Input l1="Û´- Ø±Ø·ÙˆØ¨Øª Ø®Ø§Ú©" l2="4- Moisture Content (%)" value={v.mc} onChange={val => setV({...v, mc: val})} />
+                                <Input l1="Ûµ- Ú©Ø«Ø§ÙØª Ø®Ø´Ú© Ø§Ø¹Ø¸Ù…ÛŒ" l2="5- Max. Dry Density (g/cmÂ³)" value={v.mdd} onChange={val => setV({...v, mdd: val})} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <Input l1="Û¶- ÙˆØ²Ù† Ø±ÛŒÚ¯ Ø¯Ø± Ù…Ø®Ø±ÙˆØ·" l2="6- Wt of Sand in Cone (g)" value={v.wc} onChange={val => setV({...v, wc: val})} />
+                                <Input l1="Û·- Ú©Ø«Ø§ÙØª Ø±ÛŒÚ¯" l2="7- Sand Density (g/cmÂ³)" value={v.ds} onChange={val => setV({...v, ds: val})} />
+                            </div>
+                        </div>
+                        <button onClick={calc} className="w-full btn-primary py-5 rounded-2xl shadow-xl active:scale-[0.98]">Ù…Ø­Ø§Ø³Ø¨Ù‡ Ú©Ù…Ù¾Ú©Ø´Ù† / Calculate %</button>
+                        
+                        {res && (
+                            <div className="neo-panel p-8 rounded-[40px] border-t-4 border-amber-400 mt-6 shadow-2xl text-center fade-in">
+                                <div className="text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest">Compaction Result</div>
+                                <div className="text-6xl font-black text-amber-400 mb-2">{res.compaction}%</div>
+                                <div className="text-[9px] font-bold text-slate-400 uppercase">Degree of Compaction / ÙÛŒØµØ¯ÛŒ ØªØ±Ø§Ú©Ù…</div>
+                                
+                                <div className="mt-6 pt-6 border-t border-white/5 space-y-2">
+                                    <ResultItem l1="Ú©Ø«Ø§ÙØª Ø®Ø´Ú© Ø³Ø§Ø­ÙˆÛŒ" l2="Field Dry Density" value={res.dryDensity} unit="g/cmÂ³" />
+                                    <ResultItem l1="Ú©Ø«Ø§ÙØª Ù…Ø±Ø·ÙˆØ¨" l2="Wet Density" value={res.wetDensity} unit="g/cmÂ³" />
+                                    <ResultItem l1="Ø­Ø¬Ù… Ø­ÙØ±Ù‡" l2="Hole Volume" value={res.holeVol} unit="cmÂ³" />
+                                </div>
+                                <CopyBtn data={{ "Test": "FDT Compaction", "Result": res.compaction + "%", "Field Dry Density": res.dryDensity + " g/cm3" }} />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const ProctorCalculator = ({ onBack }) => {
+            const [points, setPoints] = useState([]);
+            const [curr, setCurr] = useState({ vol: '944', empty: '2450', full: '', mc: '' });
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            const solveQuadraticPeak = (pts) => {
+                if (pts.length < 3) return null;
+                let n = pts.length;
+                let sumX = 0, sumX2 = 0, sumX3 = 0, sumX4 = 0, sumY = 0, sumXY = 0, sumX2Y = 0;
+                pts.forEach(p => {
+                    const x = p.mc; const y = p.dry;
+                    sumX += x; sumX2 += x * x; sumX3 += x * x * x; sumX4 += x * x * x * x;
+                    sumY += y; sumXY += x * y; sumX2Y += x * x * y;
+                });
+
+                // Simple 3x3 determinant solver (Cramer's Rule)
+                const det = (m) => m[0][0]*(m[1][1]*m[2][2] - m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2] - m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1] - m[1][1]*m[2][0]);
+                const mainM = [[sumX4, sumX3, sumX2], [sumX3, sumX2, sumX], [sumX2, sumX, n]];
+                const dMain = det(mainM);
+                if (Math.abs(dMain) < 0.0001) return null;
+
+                const dA = det([[sumX2Y, sumX3, sumX2], [sumXY, sumX2, sumX], [sumY, sumX, n]]);
+                const dB = det([[sumX4, sumX2Y, sumX2], [sumX3, sumXY, sumX], [sumX2, sumY, n]]);
+                const a = dA / dMain;
+                const b = dB / dMain;
+
+                if (a >= 0) return null; // Not a downward parabola
+                const peakX = -b / (2 * a);
+                const peakY = a * peakX * peakX + b * peakX + (det([[sumX4, sumX3, sumX2Y], [sumX3, sumX2, sumXY], [sumX2, sumX, sumY]]) / dMain);
+                return { omc: peakX.toFixed(1), mdd: peakY.toFixed(3) };
+            };
+
+            const addPoint = () => {
+                const vol = parseFloat(curr.vol);
+                const empty = parseFloat(curr.empty);
+                const full = parseFloat(curr.full);
+                const mc = parseFloat(curr.mc);
+
+                if (vol <= 0 || empty < 0 || full <= empty || mc < 0) {
+                    alert("Ø®Ø·Ø§ Ø¯Ø± Ù…Ù‚Ø§Ø¯ÛŒØ± ÙˆØ±ÙˆØ¯ÛŒ! / Invalid input values.");
+                    return;
+                }
+                
+                const soil = full - empty;
+                const wet = soil / vol;
+                const dry = wet / (1 + (mc / 100));
+
+                setPoints([...points, { id: Date.now(), mc, dry: parseFloat(dry.toFixed(3)), wet: parseFloat(wet.toFixed(3)), soil }].sort((a,b) => a.mc - b.mc));
+                setCurr({ ...curr, full: '', mc: '' });
+            };
+
+            const removePoint = (id) => setPoints(points.filter(p => p.id !== id));
+            const peak = solveQuadraticPeak(points);
+
+            useEffect(() => {
+                if (!chartRef.current || points.length < 2) return;
+                if (chartInstance.current) chartInstance.current.destroy();
+
+                const ctx = chartRef.current.getContext('2d');
+                chartInstance.current = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [{
+                            label: 'Proctor Curve',
+                            data: points.map(p => ({ x: p.mc, y: p.dry })),
+                            borderColor: '#fbbf24',
+                            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 6,
+                            pointBackgroundColor: '#fbbf24'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { type: 'linear', title: { display: true, text: 'Moisture %', color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } },
+                            y: { title: { display: true, text: 'Dry Density (g/cmÂ³)', color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }, [points]);
+
+            return (
+                <div className="fade-in pb-20">
+                    <ViewHeader t1="ØªØ³Øª Ù¾Ø±ÙˆÚ©ØªÙˆØ± (MDD)" t2="Proctor Compaction Test" icon="fa-weight-hanging" onBack={onBack} />
+                    
+                    <div className="neo-panel p-4 rounded-2xl space-y-3 mb-6">
+                        <div className="grid grid-cols-2 gap-2">
+                            <Input l1="Ø­Ø¬Ù… Ù‚Ø§Ù„Ø¨ (cmÂ³)" l2="Mold Vol (cmÂ³)" value={curr.vol} onChange={v => setCurr({...curr, vol: v})} />
+                            <Input l1="ÙˆØ²Ù† Ù‚Ø§Ù„Ø¨ Ø®Ø§Ù„ÛŒ (g)" l2="Empty Mold (g)" value={curr.empty} onChange={v => setCurr({...curr, empty: v})} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <Input l1="ÙˆØ²Ù† Ù‚Ø§Ù„Ø¨ + Ø®Ø§Ú© (g)" l2="Mold + Soil (g)" value={curr.full} onChange={v => setCurr({...curr, full: v})} />
+                            <Input l1="Ø±Ø·ÙˆØ¨Øª ØªØ³Øª (%)" l2="Moisture (%)" value={curr.mc} onChange={v => setCurr({...curr, mc: v})} />
+                        </div>
+                        <button onClick={addPoint} className="w-full btn-primary py-4 rounded-xl shadow-lg active:scale-95 transition-all">
+                            <i className="fas fa-plus-circle mr-2"></i> Ø¯Ø±Ø¬ Ù†Ù‚Ø·Ù‡ ØªØ³Øª / Add Point
+                        </button>
+                    </div>
+
+                    {points.length > 0 && (
+                        <div className="space-y-4">
+                            <div className="neo-panel rounded-2xl overflow-hidden">
+                                <table className="w-full text-[10px] text-right">
+                                    <thead className="bg-slate-900 text-slate-500 uppercase">
+                                        <tr>
+                                            <th className="p-3 text-center">MC%</th>
+                                            <th className="p-3 text-center">Wet D.</th>
+                                            <th className="p-3 text-center">Dry D.</th>
+                                            <th className="p-3 text-center">Delete</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {points.map(p => (
+                                            <tr key={p.id} className="text-white font-bold">
+                                                <td className="p-3 text-center">{p.mc}%</td>
+                                                <td className="p-3 text-center opacity-60">{p.wet}</td>
+                                                <td className="p-3 text-center text-amber-400">{p.dry}</td>
+                                                <td className="p-3 text-center">
+                                                    <button onClick={() => removePoint(p.id)} className="text-red-500/50 hover:text-red-500"><i className="fas fa-times"></i></button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {points.length >= 2 && (
+                                <div className="neo-panel p-4 rounded-3xl h-64 flex items-center justify-center">
+                                    <canvas ref={chartRef}></canvas>
+                                </div>
+                            )}
+
+                            {peak && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="neo-panel p-5 rounded-3xl text-center border-t-4 border-emerald-500 gold-glow">
+                                        <div className="text-[9px] font-black text-slate-500 uppercase mb-1">Max Dry Density (MDD)</div>
+                                        <div className="text-2xl font-black text-emerald-400">{peak.mdd} <small className="text-[10px]">g/cmÂ³</small></div>
+                                    </div>
+                                    <div className="neo-panel p-5 rounded-3xl text-center border-t-4 border-blue-500">
+                                        <div className="text-[9px] font-black text-slate-500 uppercase mb-1">Optimum Moisture (OMC)</div>
+                                        <div className="text-2xl font-black text-blue-400">{peak.omc}%</div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {points.length < 3 && points.length > 0 && (
+                                <div className="p-4 bg-amber-400/5 border border-dashed border-amber-400/20 rounded-2xl text-[9px] text-amber-500/70 text-center italic">
+                                    Ø¨Ø±Ø§ÛŒ Ù…Ø­Ø§Ø³Ø¨Ù‡ MDD Ø­Ø¯Ø§Ù‚Ù„ Û³ Ù†Ù‚Ø·Ù‡ ÙˆØ§Ø±Ø¯ Ú©Ù†ÛŒØ¯. <br/> Add at least 3 points for MDD/OMC calculation.
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const BrickCalculator = ({ onBack }) => {
+            const [wall, setWall] = useState({ l: '', h: '', t: '0.35' });
+            const [ratio, setRatio] = useState('1:4');
+            const [res, setRes] = useState(null);
+            const calc = () => {
+                const vol = wall.l * wall.h * wall.t;
+                const count = Math.ceil(vol / (0.24 * 0.12 * 0.08));
+                const dryMortar = (vol * 0.25) * 1.33;
+                const parts = ratio.split(':').map(Number);
+                const onePart = dryMortar / parts.reduce((a,b)=>a+b, 0);
+                setRes({ count, vol: vol.toFixed(2), cement: Math.ceil(onePart * parts[0] / 0.035), sand: (onePart * parts[1]).toFixed(2) });
+            };
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="Ø¨Ø±Ø¢ÙˆØ±Ø¯ Ø®Ø´Øª Ùˆ Ù…ØµØ§Ù„Ù‡" t2="Brick & Mortar Estimator" icon="fa-layer-group" onBack={onBack} />
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input l1="Ø·ÙˆÙ„ Ø¯ÛŒÙˆØ§Ø± (m)" l2="Length (m)" onChange={v => setWall({...wall, l: v})} />
+                            <Input l1="Ø§Ø±ØªÙØ§Ø¹ Ø¯ÛŒÙˆØ§Ø± (m)" l2="Height (m)" onChange={v => setWall({...wall, h: v})} />
+                        </div>
+                        <Input l1="Ø¶Ø®Ø§Ù…Øª (m)" l2="Thickness (m)" value={wall.t} onChange={v => setWall({...wall, t: v})} />
+                        <Input l1="Ù†Ø³Ø¨Øª Ù…ØµØ§Ù„Ù‡ (C:S)" l2="Mortar Ratio (C:S)" value={ratio} onChange={setRatio} type="text" />
+                        <button onClick={calc} className="w-full btn-primary py-5 rounded-2xl shadow-xl">Ù…Ø­Ø§Ø³Ø¨Ù‡ Ø¨Ø±Ø¢ÙˆØ±Ø¯ / Estimate</button>
+                        {res && (
+                            <div className="neo-panel p-5 rounded-3xl border-t-4 border-orange-500 mt-6 space-y-1">
+                                <ResultItem l1="ØªØ¹Ø¯Ø§Ø¯ Ø®Ø´Øª" l2="Number of Bricks" value={res.count.toLocaleString()} unit="pcs" />
+                                <ResultItem l1="Ø³Ù…Ù†Øª (Ø¨ÙˆØ±ÛŒ)" l2="Cement (Bags)" value={res.cement} unit="bags" color="text-orange-400" />
+                                <ResultItem l1="Ø±ÛŒÚ¯ (Ù…ØªØ± Ù…Ú©Ø¹Ø¨)" l2="Sand (mÂ³)" value={res.sand} unit="mÂ³" color="text-orange-400" />
+                                <CopyBtn data={{ "Item": "Brick Masonry", "Qty": res.count, "Cement": res.cement + " bags", "Sand": res.sand + " m3" }} />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const ConcreteCalculator = ({ onBack }) => {
+            const [dim, setDim] = useState({ l: '', w: '', h: '' });
+            const [ratio, setRatio] = useState('1:2:4');
+            const [res, setRes] = useState(null);
+            const calc = () => {
+                const vol = dim.l * dim.w * dim.h;
+                const dryVol = vol * 1.54;
+                const parts = ratio.split(':').map(Number);
+                const onePart = dryVol / parts.reduce((a, b) => a + b, 0);
+                setRes({ vol: vol.toFixed(2), cement: Math.ceil((onePart * parts[0]) / 0.035), sand: (onePart * parts[1]).toFixed(2), gravel: (onePart * parts[2]).toFixed(2) });
+            };
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="Ø¨Ø±Ø¢ÙˆØ±Ø¯ Ú©Ø§Ù†Ú©Ø±ÛŒØª" t2="Concrete Estimator" icon="fa-fill-drip" onBack={onBack} />
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-3 gap-2">
+                            <Input l1="Ø·ÙˆÙ„" l2="L" onChange={v => setDim({...dim, l: v})} />
+                            <Input l1="Ø¹Ø±Ø¶" l2="W" onChange={v => setDim({...dim, w: v})} />
+                            <Input l1="Ø¶Ø®Ø§Ù…Øª" l2="T" onChange={v => setDim({...dim, h: v})} />
+                        </div>
+                        <Input l1="Ù†Ø³Ø¨Øª Ù…Ø®Ù„ÙˆØ· (C:S:G)" l2="Mix Ratio (C:S:G)" value={ratio} onChange={setRatio} type="text" />
+                        <button onClick={calc} className="w-full btn-primary py-5 rounded-2xl shadow-xl">Ù…Ø­Ø§Ø³Ø¨Ù‡ / Calculate</button>
+                        {res && (
+                            <div className="neo-panel p-5 rounded-3xl border-t-4 border-emerald-500 mt-6">
+                                <ResultItem l1="Ø­Ø¬Ù… Ú©Ù„" l2="Total Volume" value={res.vol} unit="mÂ³" color="text-emerald-400" />
+                                <ResultItem l1="Ø³Ù…Ù†Øª (Ø¨ÙˆØ±ÛŒ)" l2="Cement" value={res.cement} unit="bags" color="text-emerald-400" />
+                                <ResultItem l1="Ø±ÛŒÚ¯" l2="Sand" value={res.sand} unit="mÂ³" color="text-emerald-400" />
+                                <ResultItem l1="Ø¬ØºÙ„" l2="Gravel" value={res.gravel} unit="mÂ³" color="text-emerald-400" />
+                                <CopyBtn data={{ "Item": "Concrete", "Vol": res.vol, "Cement": res.cement + " bags" }} />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const Calculator = ({ onBack }) => {
+            const [display, setDisplay] = useState('0');
+            const btns = ['7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+','C'];
+            const handle = (b) => {
+                if(b === 'C') setDisplay('0');
+                else if(b === '=') { try { setDisplay(eval(display).toString()); } catch(e) { setDisplay('Error'); } }
+                else setDisplay(display === '0' ? b : display + b);
+            };
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="Ù…Ø§Ø´ÛŒÙ† Ø­Ø³Ø§Ø¨" t2="Standard Calculator" icon="fa-calculator" onBack={onBack} />
+                    <div className="neo-panel p-4 rounded-3xl space-y-4">
+                        <div className="w-full bg-slate-900 p-6 rounded-2xl text-right text-3xl font-black text-amber-400 overflow-hidden">{display}</div>
+                        <div className="grid grid-cols-4 gap-3">
+                            {btns.map(b => (
+                                <button key={b} onClick={() => handle(b)} className={`p-5 rounded-2xl font-black text-lg active:scale-90 transition-all ${['/','*','-','+','='].includes(b) ? 'bg-amber-400 text-slate-900' : 'bg-slate-800 text-white'}`}>{b}</button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const UnitConverter = ({ onBack }) => {
+            const [val, setVal] = useState('');
+            const [cat, setCat] = useState('length');
+            const [res, setRes] = useState([]);
+            const cats = {
+                length: { n1: 'Ø·ÙˆÙ„', n2: 'Length' },
+                area: { n1: 'Ù…Ø³Ø§Ø­Øª', n2: 'Area' },
+                weight: { n1: 'ÙˆØ²Ù†', n2: 'Weight' },
+                volume: { n1: 'Ø­Ø¬Ù…', n2: 'Volume' },
+                pressure: { n1: 'ÙØ´Ø§Ø±/Ù…Ù‚Ø§ÙˆÙ…Øª', n2: 'Pressure/Strength' }
+            };
+            const units = {
+                length: { m: 1, cm: 100, mm: 1000, km: 0.001, in: 39.37, ft: 3.28, yd: 1.093 },
+                area: { m2: 1, ft2: 10.76, jerib: 0.0005, hectare: 0.0001, acre: 0.000247 },
+                weight: { kg: 1, g: 1000, ton: 0.001, lb: 2.2, oz: 35.27 },
+                volume: { m3: 1, liter: 1000, ft3: 35.31, gal: 264.17 },
+                pressure: { MPa: 1, 'kg/cmÂ²': 10.197, psi: 145.04, bar: 10, kPa: 1000 }
+            };
+            useEffect(() => {
+                if(!val) return setRes([]);
+                setRes(Object.entries(units[cat]).map(([u, rate]) => ({ u, v: (val * rate).toFixed(3) })));
+            }, [val, cat]);
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="ØªØ¨Ø¯ÛŒÙ„ ÙˆØ§Ø­Ø¯Ø§Øª" t2="Unit Converter" icon="fa-exchange-alt" onBack={onBack} />
+                    <div className="space-y-4">
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                            {Object.entries(cats).map(([id, n]) => (
+                                <button key={id} onClick={() => setCat(id)} className={`whitespace-nowrap px-4 py-2 rounded-xl border transition-all flex flex-col items-center ${cat === id ? 'bg-amber-400 border-amber-400 text-slate-900' : 'border-white/10 text-slate-500'}`}>
+                                    <span className="text-[10px] font-black">{n.n1}</span>
+                                    <span className="text-[7px] font-bold uppercase">{n.n2}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <Input l1="Ù…Ù‚Ø¯Ø§Ø±" l2="Value" onChange={setVal} value={val} />
+                        <div className="neo-panel p-4 rounded-3xl space-y-2">
+                            {res.length > 0 ? res.map(r => <ResultItem key={r.u} l1={r.u} l2="" value={r.v} unit="" color="text-cyan-400" />) : <p className="text-center text-[10px] text-slate-600 py-4 italic">Ø¹Ø¯Ø¯ Ø±Ø§ ÙˆØ§Ø±Ø¯ Ú©Ù†ÛŒØ¯ / Enter a value</p>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const DateConverter = ({ onBack }) => {
+            const [mode, setMode] = useState('g2j');
+            const [d, setD] = useState({ y: '2026', m: '6', d: '29' });
+            const [res, setRes] = useState('');
+            const convert = () => {
+                const out = mode === 'g2j' ? DateUtils.g2j(parseInt(d.y), parseInt(d.m), parseInt(d.d)) : DateUtils.j2g(parseInt(d.y), parseInt(d.m), parseInt(d.d));
+                setRes(out.join('/'));
+            };
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="ØªØ¨Ø¯ÛŒÙ„ ØªØ§Ø±ÛŒØ®" t2="Date Converter" icon="fa-calendar-alt" onBack={onBack} />
+                    <div className="space-y-4">
+                        <div className="flex gap-2 p-1 bg-slate-900 rounded-2xl">
+                            <button onClick={() => setMode('g2j')} className={`flex-1 py-3 rounded-xl transition-all flex flex-col items-center ${mode === 'g2j' ? 'bg-amber-400 text-slate-900' : 'text-slate-500'}`}>
+                                <span className="text-[10px] font-black">Ù…ÛŒÙ„Ø§Ø¯ÛŒ Ø¨Ù‡ Ø´Ù…Ø³ÛŒ</span>
+                                <span className="text-[7px] font-bold uppercase">G to Solar</span>
+                            </button>
+                            <button onClick={() => setMode('j2g')} className={`flex-1 py-3 rounded-xl transition-all flex flex-col items-center ${mode === 'j2g' ? 'bg-amber-400 text-slate-900' : 'text-slate-500'}`}>
+                                <span className="text-[10px] font-black">Ø´Ù…Ø³ÛŒ Ø¨Ù‡ Ù…ÛŒÙ„Ø§Ø¯ÛŒ</span>
+                                <span className="text-[7px] font-bold uppercase">Solar to G</span>
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <Input l1="Ø³Ø§Ù„" l2="Year" value={d.y} onChange={v => setD({...d, y: v})} />
+                            <Input l1="Ù…Ø§Ù‡" l2="Month" value={d.m} onChange={v => setD({...d, m: v})} />
+                            <Input l1="Ø±ÙˆØ²" l2="Day" value={d.d} onChange={v => setD({...d, d: v})} />
+                        </div>
+                        <button onClick={convert} className="w-full btn-primary py-5 rounded-2xl">ØªØ¨Ø¯ÛŒÙ„ / Convert</button>
+                        {res && (
+                            <div className="neo-panel p-8 rounded-[40px] border-t-4 border-indigo-500 mt-6 text-center shadow-xl">
+                                <div className="text-[10px] font-black text-slate-500 uppercase mb-2">Converted Result</div>
+                                <div className="text-3xl font-black text-indigo-400 tracking-widest">{res}</div>
+                                <div className="text-[9px] font-bold text-slate-400 uppercase mt-2">{mode === 'g2j' ? 'Ù‡Ø¬Ø±ÛŒ Ø´Ù…Ø³ÛŒ (Solar Hijri)' : 'Ù…ÛŒÙ„Ø§Ø¯ÛŒ (Gregorian)'}</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const BubbleLevel = ({ onBack }) => {
+            const [rot, setRot] = useState({ x: 0, y: 0 });
+            useEffect(() => {
+                const h = (e) => setRot({ x: e.beta, y: e.gamma });
+                window.addEventListener('deviceorientation', h);
+                return () => window.removeEventListener('deviceorientation', h);
+            }, []);
+            const bx = Math.max(-100, Math.min(100, rot.y * 3)) + 125 - 20;
+            const by = Math.max(-100, Math.min(100, rot.x * 3)) + 125 - 20;
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="Ø¢Ø¨ ØªØ±Ø§Ø² (Level)" t2="Bubble Spirit Level" icon="fa-dot-circle" onBack={onBack} />
+                    <div className="space-y-10 text-center">
+                        <div className="level-bg">
+                            <div className="absolute top-50 left-0 w-full h-[1px] bg-white/10 top-1/2"></div>
+                            <div className="absolute top-0 left-50 w-[1px] h-full bg-white/10 left-1/2"></div>
+                            <div className="level-center"></div>
+                            <div className="level-bubble" style={{ left: `${bx}px`, top: `${by}px` }}></div>
+                        </div>
+                        <div className="neo-panel p-6 rounded-3xl grid grid-cols-2 gap-4">
+                            <div><div className="text-[9px] font-black text-slate-500 uppercase">X-Axis</div><div className="text-2xl font-black text-green-400">{Math.round(rot.x)}Â°</div></div>
+                            <div><div className="text-[9px] font-black text-slate-500 uppercase">Y-Axis</div><div className="text-2xl font-black text-green-400">{Math.round(rot.y)}Â°</div></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SteelCalculator = ({ onBack }) => {
+            const [v, setV] = useState({ d: '', l: '' });
+            const [res, setRes] = useState(null);
+            const calc = () => { const w = (v.d * v.d / 162.2) * v.l; setRes(w.toFixed(2)); };
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="ÙˆØ²Ù† Ù…ÛŒÙ„Ú¯Ø±Ø¯ (Ø³ÛŒØ®)" t2="Rebar Weight Calc" icon="fa-bars-staggered" onBack={onBack} />
+                    <Formula t1="ÙØ±Ù…ÙˆÙ„" t2="Formula" text="W (kg) = (DÂ² / 162.2) Ã— L" />
+                    <div className="space-y-4">
+                        <Input l1="Ù‚Ø·Ø± (mm)" l2="Diameter (mm)" onChange={val => setV({...v, d: val})} />
+                        <Input l1="Ø·ÙˆÙ„ (m)" l2="Length (m)" onChange={val => setV({...v, l: val})} />
+                        <button onClick={calc} className="w-full btn-primary py-5 rounded-2xl shadow-xl">Ù…Ø­Ø§Ø³Ø¨Ù‡ ÙˆØ²Ù† / Calculate</button>
+                        {res && (
+                            <div className="neo-panel p-6 rounded-3xl border-t-4 border-slate-500 mt-6 text-center shadow-xl">
+                                <span className="text-3xl font-black text-white">{res} <small className="text-xs font-normal opacity-50">kg</small></span>
+                                <p className="text-[10px] text-amber-500 font-bold mt-2">{(res/1000).toFixed(3)} Metric Tons</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const SlopeCalculator = ({ onBack }) => {
+            const [v, setV] = useState({ rise: '', run: '' });
+            const [res, setRes] = useState(null);
+            const calc = () => { setRes({ s: ((v.rise/v.run)*100).toFixed(2), a: (Math.atan(v.rise/v.run)*(180/Math.PI)).toFixed(1) }); };
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="Ù…Ø­Ø§Ø³Ø¨Ù‡ Ù…ÛŒÙ„ (Ø´ÛŒØ¨)" t2="Slope & Angle Calc" icon="fa-chart-line" onBack={onBack} />
+                    <div className="space-y-4">
+                        <Input l1="Ø§Ø±ØªÙØ§Ø¹ (m)" l2="Rise (Height)" onChange={val => setV({...v, rise: val})} />
+                        <Input l1="Ø·ÙˆÙ„ (m)" l2="Run (Horizontal)" onChange={val => setV({...v, run: val})} />
+                        <button onClick={calc} className="w-full btn-primary py-5 rounded-2xl">Ù…Ø­Ø§Ø³Ø¨Ù‡ / Calculate</button>
+                        {res && (
+                            <div className="neo-panel p-5 rounded-3xl border-t-4 border-amber-500 mt-6 space-y-1 shadow-xl">
+                                <ResultItem l1="ÙÛŒØµØ¯ÛŒ Ù…ÛŒÙ„" l2="Slope %" value={res.s} unit="%" />
+                                <ResultItem l1="Ø²Ø§ÙˆÛŒÙ‡" l2="Angle" value={res.a} unit="deg" />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const Ruler = ({ onBack }) => (
+            <div className="fade-in h-full flex flex-col">
+                <ViewHeader t1="Ø®Ø·Ú©Ø´ Ø¯ÛŒØ¬ÛŒØªØ§Ù„" t2="Digital Ruler" icon="fa-ruler-horizontal" onBack={onBack} />
+                <div className="flex-1 flex overflow-hidden neo-panel rounded-3xl relative">
+                    <div className="ruler-container">
+                        {Array.from({ length: 120 }).map((_, i) => (
+                            <div key={i} className="ruler-tick" style={{ top: `${i * 10}px`, width: i % 10 === 0 ? '30px' : (i % 5 === 0 ? '20px' : '10px'), height: '1px' }}>
+                                {i % 10 === 0 && <span className="absolute left-9 -top-2 text-[8px] text-slate-500">{i/10}</span>}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex-1 p-8 text-center flex flex-col justify-center opacity-30">
+                        <i className="fas fa-mobile-alt text-5xl mb-4"></i>
+                        <p className="text-[10px] font-bold leading-relaxed italic">Scales may vary by screen size.</p>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const GeometryCalculator = ({ onBack }) => {
+            const [shape, setShape] = useState('circle');
+            const [v, setV] = useState({ r: '', l: '', w: '', a: '', b: '', h: '', t: '' });
+            const [res, setRes] = useState(null);
+            const shapes = [
+                { id: 'circle', n1: 'Ø¯Ø§ÛŒØ±Ù‡', n2: 'Circle' }, 
+                { id: 'rect', n1: 'Ù…Ø³ØªØ·ÛŒÙ„', n2: 'Rect' }, 
+                { id: 'square', n1: 'Ù…Ø±Ø¨Ø¹', n2: 'Square' }, 
+                { id: 'triangle', n1: 'Ù…Ø«Ù„Ø«', n2: 'Triangle' },
+                { id: 'cylinder', n1: 'Ø§Ø³ØªÙˆØ§Ù†Ù‡', n2: 'Cylinder' }
+            ];
+            const calc = () => {
+                let a = 0, p = 0, vol = 0;
+                if(shape === 'circle') { a = Math.PI * v.r * v.r; p = 2 * Math.PI * v.r; }
+                else if(shape === 'rect') { a = v.l * v.w; p = 2 * (parseFloat(v.l) + parseFloat(v.w)); }
+                else if(shape === 'square') { a = v.a * v.a; p = 4 * v.a; }
+                else if(shape === 'triangle') { a = 0.5 * v.b * v.h; p = 'N/A'; }
+                else if(shape === 'cylinder') { a = 2 * Math.PI * v.r * (parseFloat(v.r) + parseFloat(v.h)); vol = Math.PI * v.r * v.r * v.h; }
+                
+                setRes({ a: a.toFixed(2), p: typeof p === 'number' ? p.toFixed(2) : p, v: vol ? vol.toFixed(2) : null });
+            };
+            return (
+                <div className="fade-in">
+                    <ViewHeader t1="Ø§Ø´Ú©Ø§Ù„ Ù‡Ù†Ø¯Ø³ÛŒ" t2="Geometry Calc" icon="fa-shapes" onBack={onBack} />
+                    <div className="flex overflow-x-auto gap-2 pb-4 no-scrollbar">
+                        {shapes.map(s => <button key={s.id} onClick={() => {setShape(s.id); setRes(null);}} className={`whitespace-nowrap px-4 py-2 rounded-xl text-[10px] font-black border transition-all ${shape === s.id ? 'bg-amber-400 border-amber-400 text-slate-900' : 'border-white/10 text-slate-500'}`}>{s.n1}</button>)}
+                    </div>
+                    <div className="space-y-4">
+                        {(shape === 'circle' || shape === 'cylinder') && <Input l1="Ø´Ø¹Ø§Ø¹ (r)" l2="Radius" onChange={val => setV({...v, r: val})} />}
+                        {shape === 'rect' && <><Input l1="Ø·ÙˆÙ„ (L)" l2="Length" onChange={val => setV({...v, l: val})} /><Input l1="Ø¹Ø±Ø¶ (W)" l2="Width" onChange={val => setV({...v, w: val})} /></>}
+                        {shape === 'square' && <Input l1="Ø¶Ù„Ø¹ (a)" l2="Side" onChange={val => setV({...v, a: val})} />}
+                        {shape === 'triangle' && <><Input l1="Ù‚Ø§Ø¹Ø¯Ù‡ (B)" l2="Base" onChange={val => setV({...v, b: val})} /><Input l1="Ø§Ø±ØªÙØ§Ø¹ (H)" l2="Height" onChange={val => setV({...v, h: val})} /></>}
+                        {shape === 'cylinder' && <Input l1="Ø§Ø±ØªÙØ§Ø¹ (H)" l2="Height" onChange={val => setV({...v, h: val})} />}
+                        
+                        <button onClick={calc} className="w-full btn-primary py-5 rounded-2xl shadow-xl">Ù…Ø­Ø§Ø³Ø¨Ù‡ / Calculate</button>
+                        
+                        {res && (
+                            <div className="neo-panel p-5 rounded-3xl border-t-4 border-purple-500 mt-6 space-y-1 shadow-xl">
+                                <ResultItem l1="Ù…Ø³Ø§Ø­Øª" l2="Area" value={res.a} unit="mÂ²" color="text-purple-400" />
+                                <ResultItem l1="Ù…Ø­ÛŒØ·" l2="Perimeter" value={res.p} unit="m" color="text-purple-400" />
+                                {res.v && <ResultItem l1="Ø­Ø¬Ù…" l2="Volume" value={res.v} unit="mÂ³" color="text-purple-400" />}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const DateUtils = {
+            g2j: (gy, gm, gd) => {
+                const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+                let jy = (gy <= 1600) ? 0 : gy - 1600;
+                let gm_ = gm - 1; let gd_ = gd - 1;
+                let g_day_no = 365 * jy + Math.floor((jy + 3) / 4) - Math.floor((jy + 99) / 100) + Math.floor((jy + 399) / 400);
+                for (let i = 0; i < gm_; ++i) g_day_no += g_d_m[i];
+                if (gm_ > 1 && ((jy % 4 === 0 && jy % 100 !== 0) || (jy % 400 === 0))) ++g_day_no;
+                g_day_no += gd_;
+                let j_day_no = g_day_no - 79;
+                let j_np = Math.floor(j_day_no / 12053);
+                j_day_no %= 12053;
+                jy = 979 + 33 * j_np + 4 * Math.floor(j_day_no / 1461);
+                j_day_no %= 1461;
+                if (j_day_no >= 366) { jy += Math.floor((j_day_no - 1) / 365); j_day_no = (j_day_no - 1) % 365; }
+                let jm, jd;
+                const j_m_days = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+                for (let i = 0; i < 11 && j_day_no >= j_m_days[i]; ++i) { j_day_no -= j_m_days[i]; jm = i + 1; }
+                jm = (jm === undefined) ? 1 : jm + 1;
+                jd = j_day_no + 1;
+                return [jy, jm, jd];
+            },
+            j2g: (jy, jm, jd) => {
+                let jy_ = jy - 979; let jm_ = jm - 1; let jd_ = jd - 1;
+                let j_day_no = 365 * jy_ + Math.floor(jy_ / 33) * 8 + Math.floor((jy_ % 33 + 3) / 4);
+                const j_m_days = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+                for (let i = 0; i < jm_; ++i) j_day_no += j_m_days[i];
+                j_day_no += jd_;
+                let g_day_no = j_day_no + 79;
+                let gy = 1600 + 400 * Math.floor(g_day_no / 146097);
+                g_day_no %= 146097;
+                let leap = 1;
+                if (g_day_no >= 36525) { g_day_no--; gy += 100 * Math.floor(g_day_no / 36524); g_day_no %= 36524; if (g_day_no >= 365) g_day_no++; else leap = 0; }
+                gy += 4 * Math.floor(g_day_no / 1461); g_day_no %= 1461;
+                if (g_day_no >= 366) { leap = 0; g_day_no--; gy += Math.floor(g_day_no / 365); g_day_no %= 365; }
+                let i;
+                const g_d_m = [31, ((gy % 4 === 0 && gy % 100 !== 0) || (gy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                for (i = 0; i < 12 && g_day_no >= g_d_m[i]; i++) g_day_no -= g_d_m[i];
+                return [gy, i + 1, g_day_no + 1];
+            }
+        };
+
+        const Encyclopedia = ({ onBack }) => {
+            const [query, setQuery] = useState('');
+            const [results, setResults] = useState([]);
+            const [selected, setSelected] = useState(null);
+            const [cat, setCat] = useState('All');
+
+            const categories = ["All", "Soil Mechanics", "Concrete Technology", "Pavement Engineering", "Structural Engineering", "Water Resources"];
+
+            useEffect(() => {
+                const search = async () => {
+                    let collection = db.terms;
+                    if (query.length > 0) {
+                        const q = query.toLowerCase();
+                        const terms = await db.terms
+                            .filter(t => 
+                                t.enTitle.toLowerCase().includes(q) || 
+                                t.faTitle.includes(q) || 
+                                (t.acronym && t.acronym.toLowerCase().includes(q))
+                            )
+                            .toArray();
+                        setResults(terms);
+                    } else {
+                        const terms = await db.terms.limit(20).toArray();
+                        setResults(terms);
+                    }
+                };
+                search();
+            }, [query, cat]);
+
+            if (selected) return (
+                <div className="fade-in pb-20">
+                    <div className="flex items-center gap-4 mb-6">
+                        <button onClick={() => setSelected(null)} className="w-10 h-10 bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400 active:scale-90">
+                            <i className="fas fa-arrow-right"></i>
+                        </button>
+                        <div>
+                            <h2 className="text-xl font-black text-white">{selected.faTitle}</h2>
+                            <p className="text-xs font-bold text-amber-500 uppercase">{selected.enTitle}</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="neo-panel p-6 rounded-3xl space-y-4">
+                            <div className="space-y-1">
+                                <span className="text-[9px] font-black text-slate-500 uppercase">Definition (EN)</span>
+                                <p className="text-sm text-slate-300 leading-relaxed italic">{selected.enDef}</p>
+                            </div>
+                            <div className="space-y-1 border-t border-white/5 pt-4">
+                                <span className="text-[9px] font-black text-slate-500 uppercase">ØªØ¹Ø±ÛŒÙ (Ø¯Ø±ÛŒ)</span>
+                                <p className="text-sm text-white leading-relaxed text-right">{selected.faDef}</p>
+                            </div>
+                        </div>
+
+                        {selected.formula && (
+                            <div className="neo-panel p-4 rounded-2xl bg-amber-400/5 border border-amber-400/20">
+                                <span className="text-[9px] font-black text-amber-500 uppercase">Formula / ÙØ±Ù…ÙˆÙ„</span>
+                                <div className="text-center py-2 text-xl font-mono text-amber-400">{selected.formula}</div>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="neo-panel p-4 rounded-2xl">
+                                <span className="text-[8px] font-black text-slate-500 uppercase">Category</span>
+                                <p className="text-[10px] font-bold text-white mt-1">{selected.category}</p>
+                            </div>
+                            <div className="neo-panel p-4 rounded-2xl">
+                                <span className="text-[8px] font-black text-slate-500 uppercase">Standards</span>
+                                <p className="text-[10px] font-bold text-amber-500 mt-1">{selected.standards}</p>
+                            </div>
+                        </div>
+
+                        <div className="neo-panel p-4 rounded-2xl">
+                            <span className="text-[8px] font-black text-slate-500 uppercase">Related Terms / Ø§ØµØ·Ù„Ø§Ø­Ø§Øª Ù…Ø±ØªØ¨Ø·</span>
+                            <p className="text-[10px] font-bold text-slate-400 mt-1">{selected.related}</p>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="fade-in h-full flex flex-col pb-20">
+                    <ViewHeader t1="Ø¯Ø§ÛŒØ±Ù‡â€ŒØ§Ù„Ù…Ø¹Ø§Ø±Ù Ù…Ù‡Ù†Ø¯Ø³ÛŒ" t2="Engineering Encyclopedia" icon="fa-book" onBack={onBack} />
+                    
+                    <div className="sticky top-0 bg-slate-950 z-10 space-y-4 pb-4">
+                        <div className="relative">
+                            <input 
+                                type="text" value={query} onChange={e => setQuery(e.target.value)}
+                                className="w-full input-field p-5 pr-12 rounded-2xl text-sm font-bold outline-none focus:border-amber-400"
+                                placeholder="Search English or Persian..."
+                            />
+                            <i className="fas fa-search absolute right-5 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                        </div>
+                        
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                            {categories.map(c => (
+                                <button key={c} onClick={() => setCat(c)} className={`whitespace-nowrap px-4 py-2 rounded-xl text-[9px] font-black border transition-all ${cat === c ? 'bg-amber-400 border-amber-400 text-slate-900' : 'border-white/10 text-slate-500'}`}>
+                                    {c}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 space-y-3 overflow-y-auto no-scrollbar">
+                        {results.length > 0 ? results.map(t => (
+                            <button key={t.id} onClick={() => setSelected(t)} className="w-full neo-panel p-5 rounded-3xl text-right flex justify-between items-center active:scale-[0.98] transition-all border-r-4 border-amber-400/20">
+                                <i className="fas fa-chevron-left text-[10px] text-slate-700"></i>
+                                <div>
+                                    <h3 className="text-sm font-black text-white">{t.faTitle}</h3>
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase">{t.enTitle} {t.acronym && `(${t.acronym})`}</p>
+                                </div>
+                            </button>
+                        )) : (
+                            <div className="text-center py-20 opacity-20">
+                                <i className="fas fa-search text-5xl mb-4"></i>
+                                <p className="text-xs font-bold uppercase tracking-widest">No terms found</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const AboutView = ({ onBack }) => {
+            const [showPWA, setShowPWA] = useState(false);
+            return (
+                <div className="fade-in space-y-6">
+                    <ViewHeader t1="Ø¯Ø±Ø¨Ø§Ø±Ù‡ Ø§Ù¾Ù„ÛŒÚ©ÛŒØ´Ù†" t2="About Civil Master" icon="fa-info-circle" onBack={onBack} />
+                    
+                    <div className="neo-panel p-8 rounded-[40px] text-center border-t-4 border-amber-400 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-20"></div>
+                        <div className="w-20 h-20 bg-slate-800 rounded-3xl mx-auto mb-6 flex items-center justify-center border border-white/5 shadow-2xl">
+                            <i className="fas fa-user-tie text-amber-400 text-3xl"></i>
+                        </div>
+                        <h3 className="text-xl font-black text-white mb-1">Ø§Ù†Ø¬Ù†ÛŒØ± Ø§Ø­Ù…Ø¯ ÙÛŒØ±ÙˆØ² ÛŒØ§Ø¯Ú¯Ø§Ø±ÛŒ</h3>
+                        <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest mb-8">Eng. Ahmad Feroz Yadgari</p>
+                        
+                        <div className="space-y-4">
+                            <div className="bg-slate-900/50 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                                <span className="text-[9px] font-black text-slate-500 uppercase">ØªÙ…Ø§Ø³ / Contact</span>
+                                <a href="tel:0789215451" className="text-sm font-black text-white">0789215451</a>
+                            </div>
+                            
+                            <button onClick={() => setShowPWA(!showPWA)} className="w-full p-4 rounded-2xl bg-slate-800 border border-white/5 flex items-center justify-between text-right">
+                                <div>
+                                    <p className="text-[10px] font-black text-white uppercase leading-none">Ø¢Ù…ÙˆØ²Ø´ Ù†ØµØ¨ Ø±ÙˆÛŒ Ù…Ø¨Ø§ÛŒÙ„</p>
+                                    <p className="text-[7px] font-bold text-slate-500 uppercase mt-1">Mobile Install Guide</p>
+                                </div>
+                                <i className={`fas ${showPWA ? 'fa-chevron-up' : 'fa-mobile-screen'} text-amber-400`}></i>
+                            </button>
+
+                            {showPWA && (
+                                <div className="p-4 rounded-2xl bg-slate-900/50 text-[10px] text-slate-400 text-right space-y-3 fade-in">
+                                    <div className="flex gap-3">
+                                        <div className="flex-1">
+                                            <p className="font-black text-white mb-1">Ø¨Ø±Ø§ÛŒ Ø§Ù†Ø¯Ø±ÙˆÛŒØ¯ (Chrome):</p>
+                                            <p>Ø±ÙˆÛŒ Ø³Ù‡ Ù†Ù‚Ø·Ù‡ Ø¨Ø§Ù„Ø§Ú©Ù„ÛŒÚ© Ú©Ø±Ø¯Ù‡ Ùˆ Ú¯Ø²ÛŒÙ†Ù‡ <span className="text-amber-500">Install App</span> ÛŒØ§ <span className="text-amber-500">Add to Home Screen</span> Ø±Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†ÛŒØ¯.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 border-t border-white/5 pt-3">
+                                        <div className="flex-1">
+                                            <p className="font-black text-white mb-1">Ø¨Ø±Ø§ÛŒ Ø¢ÛŒÙÙˆÙ† (Safari):</p>
+                                            <p>Ø±ÙˆÛŒ Ø¯Ú©Ù…Ù‡ <i className="fas fa-share-square"></i> (Share) Ú©Ù„ÛŒÚ© Ú©Ø±Ø¯Ù‡ Ùˆ Ú¯Ø²ÛŒÙ†Ù‡ <span className="text-amber-500">Add to Home Screen</span> Ø±Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†ÛŒØ¯.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="p-4 rounded-2xl bg-amber-400/5 border border-amber-400/20 text-[10px] font-bold text-amber-500/80 leading-relaxed italic text-right">
+                                Ø§ÛŒÙ† Ø§Ù¾Ù„ÛŒÚ©ÛŒØ´Ù† Ø¨Ù‡ Ø´Ú©Ù„ Ø§Ù…ØªØ­Ø§Ù†ÛŒ Ù…ÛŒâ€ŒØ¨Ø§Ø´Ø¯ Ùˆ Ø¬Ù‡Øª Ø¬Ù…Ø¹â€ŒØ¢ÙˆØ±ÛŒ Ù†Ø¸Ø±Ø§Øª Ùˆ Ù¾ÛŒØ´Ù†Ù‡Ø§Ø¯Ø§Øª Ø´Ù…Ø§ Ø¹Ø²ÛŒØ²Ø§Ù† Ù…Ù†ØªØ´Ø± Ø´Ø¯Ù‡ Ø§Ø³Øª.<br/>
+                                <span className="opacity-50">This is a trial version for feedback and testing purposes.</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="text-center pt-4 opacity-40">
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Civil Master Suite v4.0</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
