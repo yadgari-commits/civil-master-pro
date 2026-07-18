@@ -17,7 +17,7 @@
   "signing": {
     "generate": true
   },
-  "host": "YOUR_GITHUB_USERNAME.github.io",
+  "host": "yadgari-commits.github.io",
   "additionalTrustedOrigins": [],
   "appShortcuts": [
     {
