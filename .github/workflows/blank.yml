@@ -53,7 +53,7 @@ jobs:
         run: |
           PWA_URL="https://${GH_USER}.github.io/${REPO_NAME}"
           echo "🌐 PWA URL: $PWA_URL"
-          
+
           for i in {1..12}; do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$PWA_URL/index.html" || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
@@ -63,7 +63,7 @@ jobs:
             echo "⏳ Attempt $i/12: HTTP $HTTP_CODE, retrying in 5s..."
             sleep 5
           done
-          
+
           if [ "$HTTP_CODE" != "200" ]; then
             echo "::error::PWA not reachable at $PWA_URL after 60s"
             exit 1
@@ -75,32 +75,47 @@ jobs:
           REPO_NAME: ${{ inputs.repo_name }}
           BUILD_TYPE: ${{ inputs.build_type }}
         run: |
+          set -e
           PWA_URL="https://${GH_USER}.github.io/${REPO_NAME}"
-          
+          echo "🌐 Building from: $PWA_URL"
+
           rm -rf android-app
-          
+          mkdir -p android-app
+          cd android-app
+
+          echo "=== Step 1/3: Initializing TWA project ==="
           bubblewrap init \
             --manifest="${PWA_URL}/manifest.json" \
-            --directory=android-app || true
-          
-          if [ -d "android-app" ]; then
-            cp twa-manifest.json android-app/twa-manifest.json
-            cd android-app
-            bubblewrap update --manifest="${PWA_URL}/manifest.json" || true
-            
-            if [ "$BUILD_TYPE" = "release" ]; then
-              bubblewrap build
-              for apk in app-release-signed.apk app-release.apk app-release-unsigned.apk; do
-                if [ -f "$apk" ]; then
-                  cp "$apk" "../civil-master-pro-$apk"
-                fi
-              done
-            else
-              bubblewrap build --skipPwaValidation
-              [ -f "app-debug.apk" ] && cp app-debug.apk ../civil-master-pro-debug.apk
+            --packageId="com.yadgari.civilmasterpro" \
+            --directory=.
+
+          echo "=== Step 2/3: Building APK ==="
+          bubblewrap build --skipPwaValidation
+
+          echo "=== Step 3/3: Copying APKs ==="
+          cd ..
+          FOUND=0
+          for apk in android-app/app-release-signed.apk \
+                     android-app/app-release.apk \
+                     android-app/app-release-unsigned.apk \
+                     android-app/app-debug.apk; do
+            if [ -f "$apk" ]; then
+              cp "$apk" "civil-master-pro-$(basename $apk)"
+              echo "✅ Built: $(basename $apk) ($(du -h "$apk" | cut -f1))"
+              FOUND=1
             fi
-            cd ..
+          done
+
+          if [ "$FOUND" = "0" ]; then
+            echo "::error::No APK files were produced!"
+            ls -la android-app/ 2>&1 || true
+            find android-app -name "*.apk" 2>&1 || echo "No APKs found"
+            exit 1
           fi
+
+          echo ""
+          echo "=== Final APK files ==="
+          ls -la *.apk
 
       - name: 📤 Upload APK artifacts
         uses: actions/upload-artifact@v4
@@ -121,4 +136,10 @@ jobs:
             for f in *.apk; do
               [ -f "$f" ] && echo "- \`$f\` ($(du -h "$f" | cut -f1))"
             done
+            echo ""
+            echo "**Install on Android:**"
+            echo "1. Download the APK from Artifacts below"
+            echo "2. Transfer to your phone"
+            echo "3. Settings → Security → Enable \"Unknown sources\""
+            echo "4. Open the APK and tap Install"
           } >> $GITHUB_STEP_SUMMARY
