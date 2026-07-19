@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: ☕ Setup Java JDK 17
+        id: setup-java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -45,6 +46,15 @@ jobs:
 
       - name: 📦 Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
+
+      - name: 🔍 Verify Java
+        env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+          javac -version
+          ls -la "$JAVA_HOME/bin/javac" 2>&1 || echo "javac missing"
 
       - name: 🔍 Wait for PWA to be live
         env:
@@ -71,13 +81,21 @@ jobs:
 
       - name: 🏗️ Build TWA APK
         env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
           GH_USER: ${{ inputs.github_username }}
           REPO_NAME: ${{ inputs.repo_name }}
           BUILD_TYPE: ${{ inputs.build_type }}
         run: |
           set -e
+          export JAVA_HOME
+          export PATH="$JAVA_HOME/bin:$PATH"
+
           PWA_URL="https://${GH_USER}.github.io/${REPO_NAME}"
           echo "🌐 Building from: $PWA_URL"
+          echo "🔧 JAVA_HOME: $JAVA_HOME"
+
+          java -version
+          javac -version
 
           rm -rf android-app
           mkdir -p android-app
@@ -87,6 +105,7 @@ jobs:
           bubblewrap init \
             --manifest="${PWA_URL}/manifest.json" \
             --packageId="com.yadgari.civilmasterpro" \
+            --jdk="$JAVA_HOME" \
             --directory=.
 
           echo "=== Step 2/3: Building APK ==="
