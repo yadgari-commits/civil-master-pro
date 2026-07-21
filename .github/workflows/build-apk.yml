@@ -1,4 +1,4 @@
-name: Build Android APK via PWABuilder
+name: Build Android APK via PWABuilder CloudAPK
 
 on:
   workflow_dispatch:
@@ -24,8 +24,8 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🔧 Install jq
-        run: sudo apt-get install -y jq
+      - name: 🔧 Install unzip
+        run: sudo apt-get install -y unzip
 
       - name: 🔍 Wait for PWA to be live
         env:
@@ -46,7 +46,7 @@ jobs:
           echo "::error::PWA not reachable at $PWA_URL after 60s"
           exit 1
 
-      - name: 🏗️ Build APK with PWABuilder REST API
+      - name: 🏗️ Build APK with PWABuilder CloudAPK
         env:
           GH_USER: ${{ inputs.github_username }}
           REPO_NAME: ${{ inputs.repo_name }}
@@ -54,43 +54,50 @@ jobs:
           set -e
           PWA_URL="https://${GH_USER}.github.io/${REPO_NAME}"
           echo "🌐 Building APK from: $PWA_URL"
-          PAYLOAD="{\"name\":\"Civil Master Pro\",\"shortName\":\"سیویل مستر\",\"id\":\"${PWA_URL}\",\"packageId\":\"com.yadgari.civilmasterpro\",\"version\":\"4.0.0\",\"versionCode\":40,\"display\":\"standalone\",\"themeColor\":\"#fbbf24\",\"backgroundColor\":\"#0f172a\",\"iconUrl\":\"${PWA_URL}/icons/icon-512.png\",\"startUrl\":\"/?source=pwa\",\"webManifestUrl\":\"${PWA_URL}/manifest.json\"}"
-          echo "=== Payload ==="
-          echo "$PAYLOAD"
-          echo "================"
-          echo "=== Calling PWABuilder API ==="
-          RESPONSE_FILE=$(mktemp)
-          HTTP_CODE=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" -X POST \
-            "https://api.pwabuilder.com/v3/build/android" \
+
+          PAYLOAD="{\"name\":\"Civil Master Pro\",\"shortName\":\"سیویل مستر\",\"packageId\":\"com.yadgari.civilmasterpro\",\"host\":\"${PWA_URL}\",\"startUrl\":\"/?source=pwa\",\"themeColor\":\"#fbbf24\",\"backgroundColor\":\"#0f172a\",\"navigationColor\":\"#000000\",\"iconUrl\":\"${PWA_URL}/icons/icon-512.png\",\"maskableIconUrl\":\"${PWA_URL}/icons/icon-512-maskable.png\",\"webManifestUrl\":\"${PWA_URL}/manifest.json\",\"display\":\"standalone\",\"orientation\":\"default\",\"fallbackType\":\"customtabs\",\"appVersion\":\"4.0.0\",\"appVersionCode\":40,\"enableNotifications\":false,\"signingMode\":\"none\",\"splashScreenFadeOutDuration\":300,\"additionalTrustedOrigins\":[],\"features\":{\"locationDelegation\":{\"enabled\":false},\"playBilling\":{\"enabled\":false}}}"
+
+          echo "=== Calling PWABuilder CloudAPK ==="
+          echo "URL: https://pwabuilder-cloudapk.azurewebsites.net/generateAppPackage"
+          OUTPUT_ZIP=$(mktemp --suffix=.zip)
+          HTTP_CODE=$(curl -s -o "$OUTPUT_ZIP" -w "%{http_code}" -X POST \
+            "https://pwabuilder-cloudapk.azurewebsites.net/generateAppPackage" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD")
+
           echo "HTTP Status: $HTTP_CODE"
-          echo ""
-          echo "=== API Response (first 2000 chars) ==="
-          head -c 2000 "$RESPONSE_FILE"
-          echo ""
-          echo "=== End Response ==="
-          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
-            echo "::error::PWABuilder API returned HTTP $HTTP_CODE"
-            cat "$RESPONSE_FILE"
+          echo "Response file size: $(du -h "$OUTPUT_ZIP" | cut -f1)"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::PWABuilder CloudAPK returned HTTP $HTTP_CODE"
+            head -c 2000 "$OUTPUT_ZIP"
             exit 1
           fi
-          APK_URL=$(jq -r '.downloads.apk // .downloads.apkBundle // .artifactId // .url // .data.downloads.apk // .data.url // empty' "$RESPONSE_FILE" 2>/dev/null)
-          if [ -z "$APK_URL" ] || [ "$APK_URL" = "null" ]; then
-            echo "::error::Could not find APK URL in response"
-            cat "$RESPONSE_FILE"
+
+          FILE_TYPE=$(file -b "$OUTPUT_ZIP" 2>/dev/null || echo "unknown")
+          echo "File type: $FILE_TYPE"
+
+          if [[ "$FILE_TYPE" != *"Zip archive"* ]] && [[ "$FILE_TYPE" != *"zip"* ]] && [[ "$FILE_TYPE" != *"ASCII"* ]]; then
+            echo "::error::Response is not a zip file"
+            head -c 2000 "$OUTPUT_ZIP"
             exit 1
           fi
-          if [[ "$APK_URL" != http* ]]; then
-            APK_URL="https://api.pwabuilder.com$APK_URL"
-          fi
+
           echo ""
-          echo "=== Downloading APK from: $APK_URL ==="
-          curl -L -s -o civil-master-pro.apk "$APK_URL"
+          echo "=== Extracting APK ==="
+          rm -rf ./extracted
+          mkdir -p ./extracted
+          unzip -o "$OUTPUT_ZIP" -d ./extracted
+
+          find ./extracted -name "*.apk" -exec cp {} civil-master-pro.apk \;
+
           if [ ! -f "civil-master-pro.apk" ] || [ ! -s "civil-master-pro.apk" ]; then
-            echo "::error::APK file is empty or missing"
+            echo "::error::No APK found in extracted files"
+            find ./extracted -type f
             exit 1
           fi
+
+          echo ""
           echo "✅ APK ready: $(du -h civil-master-pro.apk | cut -f1)"
           ls -la *.apk
 
