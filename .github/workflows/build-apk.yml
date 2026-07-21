@@ -16,7 +16,7 @@ on:
 
 jobs:
   build-apk:
-    name: Build APK with PWABuilder
+    name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -57,7 +57,6 @@ jobs:
           PWA_URL="https://${GH_USER}.github.io/${REPO_NAME}"
           echo "🌐 Building APK from: $PWA_URL"
 
-          # Build JSON payload
           PAYLOAD=$(cat <<EOF
 {
   "name": "Civil Master Pro",
@@ -92,12 +91,10 @@ EOF
 
           if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
             echo "::error::PWABuilder API returned HTTP $HTTP_CODE"
-            echo "Full response:"
             cat "$RESPONSE_FILE"
             exit 1
           fi
 
-          # Try to extract APK URL from various possible field names
           APK_URL=$(jq -r '
             .downloads.apk //
             .downloads.apkBundle //
@@ -110,12 +107,10 @@ EOF
 
           if [ -z "$APK_URL" ] || [ "$APK_URL" = "null" ]; then
             echo "::error::Could not find APK URL in response"
-            echo "Full response:"
             cat "$RESPONSE_FILE"
             exit 1
           fi
 
-          # If URL is relative, prepend PWABuilder base
           if [[ "$APK_URL" != http* ]]; then
             APK_URL="https://api.pwabuilder.com$APK_URL"
           fi
@@ -129,11 +124,6 @@ EOF
             exit 1
           fi
 
-          # Verify it's a valid Android package (ZIP magic bytes)
-          FILE_TYPE=$(file civil-master-pro.apk 2>/dev/null || echo "unknown")
-          echo "File type: $FILE_TYPE"
-
-          echo ""
           echo "✅ APK ready: $(du -h civil-master-pro.apk | cut -f1)"
           ls -la *.apk
 
